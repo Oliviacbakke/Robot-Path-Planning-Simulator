@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en"> 
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Robot Simulator</title>
+  <style>
+    body {
+        background: #000;
+        color: #eee;
+        font-family: Arial, sans-serif;}
+
+    #grid {
+        display: grid;
+        gap: 3px;}
+
+    .cell {
+        width: 40px;
+        height: 40px;
+        padding: 0;
+        background: transparent;
+        border: 1px dashed #bbb;
+        cursor: pointer;}
+
+    .wall {
+        background: #888;}
+
+    .panel-row {
+        display: grid;
+        grid-template-columns: 1fr 420px;
+        gap: 16px;
+        margin-bottom: 16px;}
+
+        .results {
+        padding: 16px;
+        border: 1px solid #555;
+        border-radius: 12px;}
+
+        .results h2 { 
+            margin: 0 0 8px; font-size: 1rem; }
+
+        @media (max-width: 860px) {
+        .panel-row { grid-template-columns: 1fr; }}
+
+    #tools button {
+        margin-right: 8px;
+        padding: 8px 12px;
+        cursor: pointer;}
+
+    .mud { 
+        background: #8b5a2b; }
+
+    .visited { 
+        box-shadow: inset 0 0 0 20px rgba(120, 180, 255, 0.45); }
+
+    .start {
+        background: #8fd694;}
+
+    .goal {
+        background: #8bbcff;}
+
+    .wall {
+        background: #888;}
+
+    .path {
+        background: #d3d3d3;}
+
+    .robot {
+        background: #fff;
+        outline: 2px solid #aaa;}
+
+    .segmented {
+        display: flex;
+        gap: 4px;
+        padding: 4px;
+        background: #222;
+        border-radius: 10px;
+        margin-bottom: 12px;}
+
+    .segmented button {
+        flex: 1;
+        padding: 9px 10px;
+        background: transparent;
+        color: #eee;
+        border: 0;
+        border-radius: 7px;
+        cursor: pointer;}
+
+    .segmented button[aria-pressed="true"] {
+        background: #eee;
+        color: #000;
+        font-weight: 700;}
+
+    .options {
+        display: flex;
+        align-items: center; 
+        gap: 8px;
+        margin-bottom: 12px;}
+
+    select,
+    .toggle {
+        padding: 8px 12px;
+        background: #222;
+        color: #eee;
+        border: 1px solid #666;
+        border-radius: 8px;
+        font: inherit;}
+
+    option { 
+        background: #222; color: #eee; }
+
+    .toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;}
+
+    .toggle input {
+        width: 16px;
+        height: 16px;
+        margin: 0;
+        accent-color: #0f7b8a;}
+
+    .toggle:has(input:checked) {
+        border-color: #0f7b8a;}
+
+    .actions { 
+        display: flex; gap: 8px; 
+        margin-bottom: 16px;}
+
+    .action {
+        padding: 10px 18px;
+        border: 1px solid #666;
+        border-radius: 8px;
+        cursor: pointer;}
+
+    .action.primary {
+        background: #0f7b8a;
+        border-color: #0f7b8a;
+        color: #fff;
+        font-weight: 700;}
+
+    .results {
+        min-height: 280px;}
+
+    .panel-row {
+        align-items: start;}
+
+    .left { 
+        min-width: 0; }
+
+    #info {
+        min-height: 3em;}
+
+    #stats {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 12px;
+        font-size: 0.9rem;}
+
+    #stats th, #stats td {
+        padding: 6px 8px;
+        border: 1px solid #555;
+        text-align: right;}
+
+    #stats th:first-child, #stats td:first-child { 
+        text-align: left; }
+
+    #stats .best { 
+        color: #8fd694; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>Robot Simulator</h1>
+  <p>Pick a tool, then click squares to build a map. Mud is slow to cross. Press Run to watch one algorithm, or Compare All to see how all three do on your map.</p>
+
+  <div class="panel-row">
+     <div class="left">
+        <div id="tools">
+            <div class="segmented">
+                <button data-tool="start" aria-pressed="false">Start</button>
+                <button data-tool="goal" aria-pressed="false">Destination</button>
+                <button data-tool="wall" aria-pressed="true">Wall</button>
+                <button data-tool="mud" aria-pressed="false">Mud</button>
+                </div>
+            <div class="options">
+                <select id="algo" aria-label="Algorithm">
+                    <option value="dfs">DFS</option>
+                    <option value="bfs">BFS</option>
+                    <option value="dijkstra" selected>Dijkstra</option>
+                    <option value="astar">A*</option>
+                </select>
+                <label class="toggle"><input type="checkbox" id="diag"> Diagonals</label>
+                </div>
+            <div class="actions">
+                <button class="action primary" id="run">Run</button>
+                <button class="action" id="compare">Compare All</button>
+                <button class="action" id="reset">Reset</button>
+                </div>
+        </div>
+        <div id="grid"></div>
+    </div>
+
+    <aside class="results">
+    <h2>Results</h2>
+    <p id="info"></p>
+    <table id="stats"></table>
+    </aside>
+    </div>
+
+  <script>
+    const rows = 12;
+    const columns = 23;
+    const grid = document.querySelector("#grid");
+    grid.style.gridTemplateColumns = `repeat(${columns}, 40px)`;
+    let selectedTool = "wall";
+    let startCell = null;
+    let goalCell = null;
+    let runId = 0;
+    const MUD_COST = 5;
+    const cells = [];
+    const EMPTY_MSG = "Run a search or compare all three algorithms to see results here.";
+    document.querySelector("#info").textContent = EMPTY_MSG;
+
+    const model = {
+        walls: Array.from({ length: rows }, () => Array(columns).fill(false)),
+        cost:  Array.from({ length: rows }, () => Array(columns).fill(1)),
+        };
+
+    const DIRS4 = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    const SQRT2 = Math.SQRT2;
+    const DIRS8 = [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [-1, 1], [1, -1], [1, 1]];
+    const diagonalsOn = () => document.querySelector("#diag").checked;
+
+    function neighbors(r, c) {
+    const out = [];
+    const dirs = diagonalsOn() ? DIRS8 : DIRS4;
+    for (const [dr, dc] of dirs) {
+        const nr = r + dr, nc = c + dc;
+        if (!isOpen(nr, nc)) continue;
+
+        const diagonal = dr !== 0 && dc !== 0;
+        if (diagonal && (!isOpen(r + dr, c) || !isOpen(r, c + dc))) continue;
+        out.push([nr, nc, diagonal ? SQRT2 : 1]);}
+    return out;}
+    const id = (r, c) => r * columns + c;
+    const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+    function isOpen(r, c) {
+    return r >= 0 && r < rows && c >= 0 && c < columns && !model.walls[r][c];}
+
+    function rebuild(cameFrom, goal) {
+    const path = [];
+    let p = goal;
+    while (p) { path.push(p); p = cameFrom.get(id(...p)); }
+    return path.reverse();}
+
+    for (let row = 0; row < rows; row++) {
+      cells[row] = [];
+
+      for (let column = 0; column < columns; column++) {
+        const cell = document.createElement("button");
+        cell.classList.add("cell");
+        cell.dataset.row = row;
+        cell.dataset.column = column;
+        cell.setAttribute("aria-label", `Row ${row + 1}, column ${column + 1}`);
+
+        cell.addEventListener("click", () => {
+            const isEndpoint = cell === startCell || cell === goalCell;
+            if (selectedTool === "wall" || selectedTool === "mud") {
+                if (isEndpoint) return;
+                const wasSet = selectedTool === "wall"
+                ? model.walls[row][column]
+                : model.cost[row][column] === MUD_COST;
+                model.walls[row][column] = false;
+                model.cost[row][column] = 1;
+                cell.classList.remove("wall", "mud");
+                if (!wasSet) {
+                    if (selectedTool === "wall") {
+                        model.walls[row][column] = true;
+                        cell.classList.add("wall");}
+                    else {
+                        model.cost[row][column] = MUD_COST;
+                        cell.classList.add("mud");}}
+                return;}
+
+            if (cell === startCell) startCell = null;
+            if (cell === goalCell) goalCell = null;
+            cell.classList.remove("start", "goal", "wall", "mud");
+            model.walls[row][column] = false;
+            model.cost[row][column] = 1;
+
+            if (selectedTool === "start") {
+            startCell?.classList.remove("start");
+                startCell = cell;
+                cell.classList.add("start");
+            } else {
+                goalCell?.classList.remove("goal");
+                goalCell = cell;
+                cell.classList.add("goal");}});
+
+    grid.appendChild(cell);
+    cells[row][column] = cell;}}
+
+    const toolButtons = document.querySelectorAll(".segmented button");
+            toolButtons.forEach((button) => {
+            button.addEventListener("click", () => {
+                selectedTool = button.dataset.tool;
+                toolButtons.forEach((b) =>
+                b.setAttribute("aria-pressed", String(b === button))
+                );
+            });
+            });
+
+    document.querySelector("#run").addEventListener("click", async () => {
+        if (!startCell || !goalCell) {
+            alert("Place both a Start and Destination first.");
+            return;}
+
+        const myRun = ++runId;
+        document.querySelectorAll(".visited, .robot")
+            .forEach((c) => c.classList.remove("visited", "robot"));
+
+        const algos = { dfs, bfs, dijkstra, astar };
+        const name = document.querySelector("#algo").value;
+        const result = algos[name](getPosition(startCell), getPosition(goalCell));
+
+         document.querySelector("#info").textContent = result.path
+            ? `${name}: explored ${result.order.length} squares, path length ${result.path.length - 1}, path cost ${pathCost(result.path).toFixed(2)}`
+            : `${name}: no route found`;
+
+        await replay(result, myRun);});
+
+    document.querySelector("#compare").addEventListener("click", () => {
+        if (!startCell || !goalCell) {
+            alert("Place both a Start and Destination first.");
+            return;}
+
+        const start = getPosition(startCell);
+        const goal = getPosition(goalCell);
+        const algos = { "DFS": dfs, "BFS": bfs, "Dijkstra": dijkstra, "A*": astar };
+        const REPS = 200;
+        const data = [];
+
+        for (const [name, fn] of Object.entries(algos)) {
+            const result = fn(start, goal);
+            const t0 = performance.now();
+            for (let i = 0; i < REPS; i++) fn(start, goal);
+            const ms = (performance.now() - t0) / REPS;
+            data.push({ name, result, ms });}
+
+        const costs = data.filter((d) => d.result.path).map((d) => pathCost(d.result.path));
+        const bestCost = Math.min(...costs);
+
+        document.querySelector("#stats").innerHTML =
+            `<tr><th>Algorithm</th><th>Explored</th><th>Steps</th><th>Cost</th><th>Time (ms)</th></tr>` +
+            data.map(({ name, result, ms }) => {
+            if (!result.path) {
+                return `<tr><td>${name}</td><td>${result.order.length}</td><td colspan="3">no route</td></tr>`;}
+            const cost = pathCost(result.path);
+            const cls = Math.abs(cost - bestCost) < 1e-9 ? "best" : "";
+            return `<tr><td>${name}</td><td>${result.order.length}</td><td>${result.path.length - 1}</td>` +
+                    `<td class="${cls}">${cost.toFixed(2)}</td><td>${ms.toFixed(3)}</td></tr>`;
+            }).join("");});
+
+        function getPosition(cell) {
+            return [
+                Number(cell.dataset.row),
+                Number(cell.dataset.column)];}
+
+        function pathCost(path) {
+            let total = 0;
+            for (let i = 1; i < path.length; i++) {
+                const [pr, pc] = path[i - 1];
+                const [r, c] = path[i];
+                const mult = (pr !== r && pc !== c) ? SQRT2 : 1;
+                total += model.cost[r][c] * mult;}
+            return total;}
+
+        class MinHeap {
+            constructor() { this.a = []; }
+            get size() { return this.a.length; }
+            push(item, pri) {
+                const a = this.a;
+                a.push([pri, item]);
+                let i = a.length - 1;
+                while (i > 0) {
+                    const p = (i - 1) >> 1;
+                    if (a[p][0] <= a[i][0]) break;
+                    [a[p], a[i]] = [a[i], a[p]];
+                    i = p;}}
+            pop() {
+                const a = this.a, top = a[0], last = a.pop();
+                if (a.length) {
+                a[0] = last;
+                let i = 0;
+                while (true) {
+                    const l = 2 * i + 1, r = l + 1;
+                    let m = i;
+                    if (l < a.length && a[l][0] < a[m][0]) m = l;
+                    if (r < a.length && a[r][0] < a[m][0]) m = r;
+                    if (m === i) break;
+                    [a[m], a[i]] = [a[i], a[m]];
+                    i = m;}}
+                return top[1];}}
+
+        function search(start, goal, heuristic = () => 0) {
+            const dist = new Map([[id(...start), 0]]);
+            const cameFrom = new Map();
+            const closed = new Set();
+            const order = [];
+            const heap = new MinHeap();
+            heap.push(start, heuristic(start, goal));
+
+            while (heap.size) {
+                const cur = heap.pop();
+                const k = id(...cur);
+                if (closed.has(k)) continue;         
+                closed.add(k);
+                order.push(cur);
+                if (k === id(...goal)) return { path: rebuild(cameFrom, goal), order, cost: dist.get(k) };
+
+                for (const [r, c, mult] of neighbors(cur[0], cur[1])) {
+                    const g = dist.get(k) + model.cost[r][c] * mult;
+                    if (g < (dist.get(id(r, c)) ?? Infinity)) {
+                        dist.set(id(r, c), g);
+                        cameFrom.set(id(r, c), cur);
+                        heap.push([r, c], g + heuristic([r, c], goal));}}}
+            return { path: null, order };}
+
+            const manhattan = ([r1, c1], [r2, c2]) => Math.abs(r1 - r2) + Math.abs(c1 - c2);
+            const dijkstra = (s, g) => search(s, g);
+            const octile = ([r1, c1], [r2, c2]) => {
+                const dx = Math.abs(r1 - r2), dy = Math.abs(c1 - c2);
+                return (dx + dy) + (SQRT2 - 2) * Math.min(dx, dy);};
+            const astar = (s, g) => search(s, g, diagonalsOn() ? octile : manhattan);
+
+        function bfs(start, goal) {
+            const queue = [start];
+            let i = 0;
+            const seen = new Set([id(...start)]);
+            const cameFrom = new Map();
+            const order = [];
+
+            while (i < queue.length) {
+                const cur = queue[i++];
+                order.push(cur);
+                if (id(...cur) === id(...goal)) return { path: rebuild(cameFrom, goal), order };
+                for (const [r, c] of neighbors(cur[0], cur[1])) {
+                    if (seen.has(id(r, c))) continue;
+                    seen.add(id(r, c));
+                    cameFrom.set(id(r, c), cur);
+                    queue.push([r, c]);}}
+            return { path: null, order };}
+
+        function dfs(start, goal) {
+            const stack = [start];
+            const seen = new Set([id(...start)]);
+            const cameFrom = new Map();
+            const order = [];
+
+            while (stack.length > 0) {
+                const cur = stack.pop();
+                order.push(cur);
+                if (id(...cur) === id(...goal)) return { path: rebuild(cameFrom, goal), order };
+                for (const [r, c] of neighbors(cur[0], cur[1])) {
+                    if (seen.has(id(r, c))) continue;
+                    seen.add(id(r, c));
+                    cameFrom.set(id(r, c), cur);
+                    stack.push([r, c]);}}
+            return { path: null, order };}
+
+        async function replay({ path, order }, myRun) {
+            for (const [r, c] of order) {
+                if (myRun !== runId) return;
+                cells[r][c].classList.add("visited");
+                await sleep(15);}
+            if (!path) { alert("No route found."); return; }
+            for (const [r, c] of path) {
+                if (myRun !== runId) return;
+                document.querySelector(".robot")?.classList.remove("robot");
+                cells[r][c].classList.add("robot");
+                await sleep(120);}}
+
+        document.querySelector("#reset").addEventListener("click", () => {
+            runId++; 
+            document.querySelectorAll(".cell").forEach((c) =>
+                c.classList.remove("start", "goal", "wall", "path", "robot", "visited", "mud"));
+            model.walls.forEach((row) => row.fill(false));
+            model.cost.forEach((row) => row.fill(1));
+            startCell = null;
+            goalCell = null;
+            document.querySelector("#info").textContent = "";
+            document.querySelector("#stats").innerHTML = "";});
+  </script>
+</body>
+</html>
