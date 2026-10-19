@@ -2,9 +2,7 @@
 
 An interactive grid simulator where a robot finds a route across a map with walls and mud. It implements three search algorithms and lets you compare them on the same map.
 
-**[Live demo](https://oliviacbakke.github.io/robot-path-planning-simulator/)**
-
-![Demo of the simulator](demo.gif)
+**[Live demo](https://oliviacbakke.github.io/Robot-Path-Planning-Simulator/)**
 
 ## Features
 
@@ -16,6 +14,7 @@ An interactive grid simulator where a robot finds a route across a map with wall
 
 ## How it works
 
+- **DFS** searches far and wide for any path, but almost never is the shortest path.
 - **BFS** finds the path with the fewest steps, but it ignores terrain, so it will happily cross mud.
 - **Dijkstra** always expands the cheapest unexplored square, so it finds the lowest-cost path.
 - **A\*** is Dijkstra plus a heuristic estimate of the remaining cost (Manhattan distance on 4-way grids, octile distance with diagonals). It finds the same optimal path while exploring fewer squares.
@@ -29,15 +28,26 @@ Benchmarks from the **Compare all** button on three maps:
 
 | Map | Algorithm | Explored | Cost |
 |---|---|---|---|
-| Open field | Dijkstra | [N] | [N] |
-| Open field | A* | [N] | [N] |
-| Mud band with a gap | BFS | [N] | [N] |
-| Mud band with a gap | Dijkstra | [N] | [N] |
-| Mud band with a gap | A* | [N] | [N] |
-| Maze-like walls | Dijkstra | [N] | [N] |
-| Maze-like walls | A* | [N] | [N] |
+| Open field | DFS | 23 | 22 |
+| Open field | BFS | 210 | 22 |
+| Open field | Dijkstra | 201 | 22 |
+| Open field | A* | 23 | 22 |
+| Mud band with a gap | DFS | 23 | 46 |
+| Mud band with a gap | BFS | 210 | 46 |
+| Mud band with a gap | Dijkstra | 276 | 44 |
+| Mud band with a gap | A* | 198 | 44 |
+| Maze-like walls | DFS | 66 | 64 |
+| Maze-like walls | BFS | 182 | 56 |
+| Maze-like walls | Dijkstra | 182 | 56 |
+| Maze-like walls | A* | 137 | 56 |
 
-[Two or three sentences on what you found. For example: how much less A* explored than Dijkstra on the open field, whether its advantage shrank in the maze, and how BFS's path cost compared once mud was added.]
+**Some notable findings:**
+
+1. Depth-First Search always resulted in very few cells being explored because the destination was always put in the same row as the start. But often it missed the best route because of how quickly it found the destination.  
+
+2. The algorithms found that once the mud band became 6 cells wide, it is more effective to go around the mud than through it. DFS never checked that route, as it does not care about the weight of the path.
+
+3. DFS was suprisingly effective in the maze, which again is due to the placement of the start and destination cells. 
 
 ## Run locally
 
