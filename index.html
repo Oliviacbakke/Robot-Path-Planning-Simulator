@@ -174,11 +174,13 @@
 
     #stats .best { 
         color: #8fd694; font-weight: bold; }
+
+    #grid { user-select: none; }
   </style>
 </head>
 <body>
   <h1>Robot Simulator</h1>
-  <p>Pick a tool, then click squares to build a map. Mud is slow to cross. Press Run to watch one algorithm, or Compare All to see how all three do on your map.</p>
+  <p>Pick a tool, then click and drag on squares to build a map. Walls cannot be passed or seen though, and mud is slow to cross. Press Run to watch one algorithm, or Compare All to see how all three do on your map.</p>
 
   <div class="panel-row">
      <div class="left">
@@ -260,10 +262,48 @@
         return r >= 0 && r < rows && c >= 0 && c < columns && !activeMap.walls[r][c];}
 
     function rebuild(cameFrom, goal) {
-    const path = [];
-    let p = goal;
-    while (p) { path.push(p); p = cameFrom.get(id(...p)); }
-    return path.reverse();}
+        const path = [];
+        let p = goal;
+        while (p) { path.push(p); p = cameFrom.get(id(...p)); }
+        return path.reverse();}
+
+    let painting = false;
+    let paintOn = true; 
+
+    function isSet(row, column) {
+        return selectedTool === "wall"
+            ? model.walls[row][column]
+            : model.cost[row][column] === MUD_COST;}
+
+    function setTerrain(cell, row, column, on) {
+        if (cell === startCell || cell === goalCell) return;
+        model.walls[row][column] = false;
+        model.cost[row][column] = 1;
+        cell.classList.remove("wall", "mud");
+        if (!on) return;
+        if (selectedTool === "wall") {
+            model.walls[row][column] = true;
+            cell.classList.add("wall");} 
+        else {
+            model.cost[row][column] = MUD_COST;
+            cell.classList.add("mud");}}
+
+    function placeEndpoint(cell, row, column) {
+        if (cell === startCell) startCell = null;
+        if (cell === goalCell) goalCell = null;
+        cell.classList.remove("start", "goal", "wall", "mud");
+        model.walls[row][column] = false;
+        model.cost[row][column] = 1;
+        if (selectedTool === "start") {
+            startCell?.classList.remove("start");
+            startCell = cell;
+            cell.classList.add("start");} 
+        else {
+            goalCell?.classList.remove("goal");
+            goalCell = cell;
+            cell.classList.add("goal");}}
+
+    document.addEventListener("mouseup", () => { painting = false; });
 
     for (let row = 0; row < rows; row++) {
       cells[row] = [];
@@ -275,39 +315,24 @@
         cell.dataset.column = column;
         cell.setAttribute("aria-label", `Row ${row + 1}, column ${column + 1}`);
 
-        cell.addEventListener("click", () => {
-            const isEndpoint = cell === startCell || cell === goalCell;
+        cell.addEventListener("mousedown", (e) => {
+            e.preventDefault(); 
             if (selectedTool === "wall" || selectedTool === "mud") {
-                if (isEndpoint) return;
-                const wasSet = selectedTool === "wall"
-                ? model.walls[row][column]
-                : model.cost[row][column] === MUD_COST;
-                model.walls[row][column] = false;
-                model.cost[row][column] = 1;
-                cell.classList.remove("wall", "mud");
-                if (!wasSet) {
-                    if (selectedTool === "wall") {
-                        model.walls[row][column] = true;
-                        cell.classList.add("wall");}
-                    else {
-                        model.cost[row][column] = MUD_COST;
-                        cell.classList.add("mud");}}
-                return;}
+                painting = true;
+                paintOn = !isSet(row, column); 
+                setTerrain(cell, row, column, paintOn);} 
+            else {
+                placeEndpoint(cell, row, column);}});
 
-            if (cell === startCell) startCell = null;
-            if (cell === goalCell) goalCell = null;
-            cell.classList.remove("start", "goal", "wall", "mud");
-            model.walls[row][column] = false;
-            model.cost[row][column] = 1;
+        cell.addEventListener("mouseenter", () => {
+            if (painting) setTerrain(cell, row, column, paintOn);});
 
-            if (selectedTool === "start") {
-            startCell?.classList.remove("start");
-                startCell = cell;
-                cell.classList.add("start");
-            } else {
-                goalCell?.classList.remove("goal");
-                goalCell = cell;
-                cell.classList.add("goal");}});
+        cell.addEventListener("click", (e) => {
+            if (e.detail !== 0) return;
+            if (selectedTool === "wall" || selectedTool === "mud") {
+                setTerrain(cell, row, column, !isSet(row, column));} 
+            else {
+                placeEndpoint(cell, row, column);}});
 
     grid.appendChild(cell);
     cells[row][column] = cell;}}

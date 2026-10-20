@@ -82,7 +82,7 @@ Open `index.html` in a browser. There are no dependencies and no build step.
 
 ## Next steps
 
-- Click-and-drag painting, and importing a hospital floor plan as the map
+- Importing a hospital floor plan as the map
 - Delivery stops, so the robot visits several rooms in order
 - D* Lite, which repairs the previous search instead of replanning from scratch
 - Heading and turning costs instead of square-to-square moves
