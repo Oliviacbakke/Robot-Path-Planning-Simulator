@@ -124,6 +124,12 @@
     .toggle:has(input:checked) {
         border-color: #0f7b8a;}
 
+    .toggle input[type="range"] { 
+        width: 90px; height: auto; }
+
+    .cell.fog:not(.start):not(.goal) { 
+        background: #151515; border-color: #333; }
+
     .actions { 
         display: flex; gap: 8px; 
         margin-bottom: 16px;}
@@ -197,6 +203,10 @@
                 <button class="action" id="compare">Compare All</button>
                 <button class="action" id="reset">Reset</button>
                 </div>
+            <div class="options">
+                <label class="toggle"><input type="checkbox" id="sensor"> Limited sensor</label>
+                <label class="toggle">Radius <input type="range" id="radius" min="2" max="8" value="3"></label>
+                </div>
         </div>
         <div id="grid"></div>
     </div>
@@ -219,13 +229,13 @@
     let runId = 0;
     const MUD_COST = 5;
     const cells = [];
-    const EMPTY_MSG = "Run a search or compare all three algorithms to see results here.";
+    const EMPTY_MSG = "Run a search or compare all four algorithms to see results here.";
     document.querySelector("#info").textContent = EMPTY_MSG;
 
     const model = {
         walls: Array.from({ length: rows }, () => Array(columns).fill(false)),
-        cost:  Array.from({ length: rows }, () => Array(columns).fill(1)),
-        };
+        cost:  Array.from({ length: rows }, () => Array(columns).fill(1)),};
+    let activeMap = model;
 
     const DIRS4 = [[-1, 0], [1, 0], [0, -1], [0, 1]];
     const SQRT2 = Math.SQRT2;
@@ -247,7 +257,7 @@
     const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
     function isOpen(r, c) {
-    return r >= 0 && r < rows && c >= 0 && c < columns && !model.walls[r][c];}
+        return r >= 0 && r < rows && c >= 0 && c < columns && !activeMap.walls[r][c];}
 
     function rebuild(cameFrom, goal) {
     const path = [];
@@ -318,11 +328,15 @@
             return;}
 
         const myRun = ++runId;
-        document.querySelectorAll(".visited, .robot")
-            .forEach((c) => c.classList.remove("visited", "robot"));
+        document.querySelectorAll(".visited, .robot, .fog")
+            .forEach((c) => c.classList.remove("visited", "robot", "fog"));
 
         const algos = { dfs, bfs, dijkstra, astar };
         const name = document.querySelector("#algo").value;
+
+        if (document.querySelector("#sensor").checked) {
+            await drive(algos[name], myRun);
+            return;}
         const result = algos[name](getPosition(startCell), getPosition(goalCell));
 
          document.querySelector("#info").textContent = result.path
@@ -421,7 +435,7 @@
                 if (k === id(...goal)) return { path: rebuild(cameFrom, goal), order, cost: dist.get(k) };
 
                 for (const [r, c, mult] of neighbors(cur[0], cur[1])) {
-                    const g = dist.get(k) + model.cost[r][c] * mult;
+                    const g = dist.get(k) + activeMap.cost[r][c] * mult;
                     if (g < (dist.get(id(r, c)) ?? Infinity)) {
                         dist.set(id(r, c), g);
                         cameFrom.set(id(r, c), cur);
@@ -470,6 +484,74 @@
                     stack.push([r, c]);}}
             return { path: null, order };}
 
+        const belief = {
+            walls: Array.from({ length: rows }, () => Array(columns).fill(false)),
+            cost:  Array.from({ length: rows }, () => Array(columns).fill(1)),};
+
+            function resetBelief() {
+            belief.walls.forEach((r) => r.fill(false));
+            belief.cost.forEach((r) => r.fill(1));}
+
+        function hasLineOfSight(r0, c0, r1, c1) {
+            const dr = Math.abs(r1 - r0);
+            const dc = Math.abs(c1 - c0);
+            const sr = r0 < r1 ? 1 : -1;
+            const sc = c0 < c1 ? 1 : -1;
+            let err = dc - dr;
+            let r = r0, c = c0;
+            while (r !== r1 || c !== c1) {
+                if ((r !== r0 || c !== c0) && model.walls[r][c]) return false;
+                const e2 = 2 * err;
+                if (e2 > -dr) { err -= dr; c += sc; }
+                if (e2 < dc) { err += dc; r += sr; }}
+            return true;}
+
+        function sense([pr, pc], radius) {
+            const changed = new Set();
+            for (let r = Math.max(0, pr - radius); r <= Math.min(rows - 1, pr + radius); r++) {
+                for (let c = Math.max(0, pc - radius); c <= Math.min(columns - 1, pc + radius); c++) {
+                    if ((r - pr) ** 2 + (c - pc) ** 2 > radius ** 2) continue;
+                    if (!hasLineOfSight(pr, pc, r, c)) continue;   
+                    if (belief.walls[r][c] !== model.walls[r][c] ||
+                        belief.cost[r][c] !== model.cost[r][c]) {
+                        changed.add(id(r, c));}
+                    belief.walls[r][c] = model.walls[r][c];
+                    belief.cost[r][c] = model.cost[r][c];
+                    cells[r][c].classList.remove("fog");}}
+            return changed;}
+
+        function planOn(map, algo, from, to) {
+            const saved = activeMap;
+            activeMap = map;
+            try { return algo(from, to); }
+            finally { activeMap = saved; }}
+
+        async function drive(algo, myRun) {
+            const radius = Number(document.querySelector("#radius").value);
+            const goal = getPosition(goalCell);
+            let pos = getPosition(startCell);
+            const trail = [pos];
+
+            resetBelief();
+            cells.flat().forEach((c) => c.classList.add("fog"));
+            sense(pos, radius);
+
+            while (pos[0] !== goal[0] || pos[1] !== goal[1]) {
+                if (myRun !== runId) return;
+
+                const result = planOn(belief, algo, pos, goal);
+                if (!result.path) { alert("No route found."); return; }
+                pos = result.path[1];
+                trail.push(pos);
+                document.querySelector(".robot")?.classList.remove("robot");
+                cells[pos[0]][pos[1]].classList.add("robot", "visited");
+                sense(pos, radius);
+                await sleep(120);}
+
+        const optimal = planOn(model, algo, trail[0], goal);
+        document.querySelector("#info").textContent =
+            `Reached goal. Traveled cost ${pathCost(trail).toFixed(2)} vs ${pathCost(optimal.path).toFixed(2)} with full knowledge.`;}
+        
         async function replay({ path, order }, myRun) {
             for (const [r, c] of order) {
                 if (myRun !== runId) return;
@@ -482,10 +564,43 @@
                 cells[r][c].classList.add("robot");
                 await sleep(120);}}
 
+        async function drive(algo, myRun) {
+            const radius = Number(document.querySelector("#radius").value);
+            const goal = getPosition(goalCell);
+            let pos = getPosition(startCell);
+            const trail = [pos];
+            let plan = null;
+            let replans = 0;
+
+            resetBelief();
+            cells.flat().forEach((c) => c.classList.add("fog"));
+            sense(pos, radius);
+
+            while (pos[0] !== goal[0] || pos[1] !== goal[1]) {
+                if (myRun !== runId) return;
+                if (!plan) {
+                    const result = planOn(belief, algo, pos, goal);
+                    if (!result.path) { alert("No route found."); return; }
+                    plan = result.path;
+                    replans++;}
+                plan.shift();        
+                pos = plan[0];       
+                trail.push(pos);
+                document.querySelector(".robot")?.classList.remove("robot");
+                cells[pos[0]][pos[1]].classList.add("robot", "visited");
+                const changed = sense(pos, radius);
+                if (plan.slice(1).some(([r, c]) => changed.has(id(r, c)))) plan = null;
+                await sleep(120);}
+
+            const optimal = planOn(model, algo, trail[0], goal);
+            document.querySelector("#info").textContent =
+                `Reached goal in ${trail.length - 1} steps with ${replans} replans. ` +
+                `Traveled cost ${pathCost(trail).toFixed(2)} vs ${pathCost(optimal.path).toFixed(2)} with full knowledge.`;}
+
         document.querySelector("#reset").addEventListener("click", () => {
             runId++; 
             document.querySelectorAll(".cell").forEach((c) =>
-                c.classList.remove("start", "goal", "wall", "path", "robot", "visited", "mud"));
+                c.classList.remove("start", "goal", "wall", "path", "robot", "visited", "mud", "fog"));
             model.walls.forEach((row) => row.fill(false));
             model.cost.forEach((row) => row.fill(1));
             startCell = null;
